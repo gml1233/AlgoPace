@@ -1,0 +1,14 @@
+运行方式
+默认行为：评估 eval/test/ 下第一个 mp4（就是 animation_20260314_111347_final_20260314_111518.mp4），知识点留空纯做美学评估：
+
+python eval/eval_AES.py
+带知识点并写入报告文件：
+
+python eval/eval_AES.py --kp "快速排序算法" --report eval/report.md
+评估 eval/test/ 下所有 mp4，2 个并行 worker：
+
+python eval/eval_AES.py --all --workers 2 --kp "排序算法"
+指定任意视频路径：
+
+python eval/eval_AES.py --video D:\some\path\video.mp4 --kp "二分查找"
+可能需要
