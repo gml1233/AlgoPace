@@ -10,6 +10,9 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
+from copy import copy
+from agents.teaching_planner import TaskNetwork, plan_lesson
+from agents.reference_cases import REFERENCE_CASES
 from agents.base import BaseAgent
 from agents.concept_interpreter import ConceptAnalysis, SubConcept
 from agents.manim_models import (
@@ -2671,7 +2674,15 @@ the family base-class helpers instead of manually drawing Square/Rectangle/Arrow
 
         # Store on self so downstream prompt builders pick it up without needing
         # to thread the parameter through every private helper signature.
+        if concept_analysis.teaching_request:
+            agent = copy(self)  # Keep lesson-specific language and repair caches local.
+            agent.target_language = target_language
+            return agent._execute_animation(concept_analysis, render_quality)
         self.target_language = target_language
+        return self._execute_animation(concept_analysis, render_quality)
+
+    def _execute_animation(self, concept_analysis, render_quality):
+        target_language = self.target_language
 
         start_time = time.time()
         self.logger.info(
@@ -2681,7 +2692,18 @@ the family base-class helpers instead of manually drawing Square/Rectangle/Arrow
 
         try:
             # Step 1: Generate scene plans
-            scene_plans, response_json = self._generate_scene_plans(concept_analysis)
+            request = concept_analysis.teaching_request
+            network = None
+            if request:
+                if not concept_analysis.design:
+                    raise ValueError("Missing aligned learning objectives")
+                network = self._propose_methods(concept_analysis)
+                scene_plans = [plan_lesson(concept_analysis.main_concept, request, concept_analysis.design, network)]
+                response_json = {"request": request.model_dump(), "design": concept_analysis.design.model_dump(),
+                                 "task_network": network.model_dump(),
+                                 "scene_plans": [scene_plans[0].model_dump()]}
+            else:
+                scene_plans, response_json = self._generate_scene_plans(concept_analysis)
             self.logger.info(f"Generated {len(scene_plans)} scene plans")
 
             # Save scene plans for debugging
@@ -2699,6 +2721,23 @@ the family base-class helpers instead of manually drawing Square/Rectangle/Arrow
             render_results = self._render_scenes(
                 scene_codes, scene_plans, render_quality=render_quality
             )
+            if request:
+                if not render_results or not render_results[0].success or not render_results[0].duration:
+                    raise ValueError(render_results[0].error_message if render_results else "No teaching scene rendered")
+                actual = render_results[0].duration
+                if actual > request.seconds:
+                    estimated = sum(a.duration for a in scene_plans[0].actions)
+                    scene_plans = [plan_lesson(concept_analysis.main_concept, request, concept_analysis.design,
+                                               network, estimate_scale=actual / estimated)]
+                    response_json.update(first_render_seconds=actual, scene_plans=[scene_plans[0].model_dump()])
+                    self._save_scene_plans(scene_plans, concept_analysis, response_json)
+                    scene_codes = self._generate_scene_codes(scene_plans, concept_analysis=concept_analysis)
+                    scene_codes = self._lint_and_fix_scene_codes(scene_codes, scene_plans)
+                    render_results = self._render_scenes(scene_codes, scene_plans, render_quality=render_quality)
+                    if not render_results or not render_results[0].success or not render_results[0].duration:
+                        raise ValueError("Replanned teaching scene failed to render")
+                    if render_results[0].duration > request.seconds:
+                        raise ValueError(f"Replanned video still exceeds {request.seconds}s")
             successful_renders = [r for r in render_results if r.success]
             self.logger.info(f"Successfully rendered {len(successful_renders)}/{len(render_results)} scenes")
 
@@ -2745,6 +2784,31 @@ the family base-class helpers instead of manually drawing Square/Rectangle/Arrow
                 models_used={"reasoning": self.model},
                 token_usage=self.get_token_usage()
             )
+
+    def _propose_methods(self, analysis):
+        instructions = (
+            "Generate an HTN task network as JSON matching the supplied schema. One compound "
+            "task per objective; give two or three distinct applicable methods including a concise "
+            "worked example and a richer counterexample or transfer method. Each method must cover "
+            "every required reason of its objective (zero-based reason indices). Use concrete values "
+            "and explicit initial, intermediate and final states for the same algorithm variant. "
+            "Use exactly matching state names between steps or provide a truthful summary bridge. "
+            "requires_knowledge lists assumed knowledge, using exact strings from known_prerequisites. "
+            "Teach missing prerequisites in steps. after and prefer_after reference other objective IDs. "
+            "Estimate real simultaneous speech/animation time including pauses; include time for "
+            "any optional transfer question. Keep the shorter methods feasible where possible. "
+            "Use the requested output language: " + self.target_language
+        )
+        payload = {"lesson": analysis.model_dump(), "schema": TaskNetwork.model_json_schema()}
+        case = analysis.teaching_request.reference_case
+        if case:
+            payload["reference_states_in_order"] = REFERENCE_CASES[case]()
+            instructions += (" Use only these reference state IDs in initial_state, requires_state "
+                             "and produces_state. Progress forward within each method; use concrete "
+                             "snapshot values in the example. Show hypothetical errors as annotations.")
+        return TaskNetwork.model_validate(self._call_llm_structured(
+            system_prompt=instructions, user_message=json.dumps(payload, ensure_ascii=False),
+            temperature=self.config.temperature, max_retries=3))
 
     def _generate_scene_plans(self, concept_analysis: ConceptAnalysis) -> tuple[List[ScenePlan], Dict[str, Any]]:
         """Generate scene plans from concept analysis"""
@@ -2873,7 +2937,18 @@ the family base-class helpers instead of manually drawing Square/Rectangle/Arrow
             # ========== SKILL 模板 + 全局视觉契约注入 ==========
             user_msg = "Generate the Manim code for the scene plan specified above."
 
-            if visual_contract is not None:
+            if scene_plan.id.startswith("aligned_lesson_"):
+                formatted_prompt = (
+                    f"Write one runnable Manim Community VoiceoverScene class named {class_name}. "
+                    f"Import from manim and manim_voiceover, then use {voiceover_imports} and {tts_setup_snippet}. "
+                    "Return complete Python in <manim> tags. Implement the ordered lesson actions exactly. "
+                    "Show concrete pre/post states and every required reason in sync with narration. "
+                    "Explicitly label and undo any counterexample before continuing the valid trace. "
+                    "Use concise sentences in voiceover blocks, reserve space for subtitles, use "
+                    "normal speech pace and fit speech, pauses and animation within each time slot. "
+                    "Only animate the selected steps. Lesson JSON:\n" + scene_plan_json
+                )
+            elif visual_contract is not None:
                 base_class_name = visual_contract.get("base_class_name", "SortingBase")
                 shared_var_name = visual_contract.get("shared_var_name", "SHARED_DATA")
                 first_call_example = visual_contract.get("first_call_example")
@@ -3081,7 +3156,8 @@ the family base-class helpers instead of manually drawing Square/Rectangle/Arrow
         self.logger.info(f"Starting parallel code generation for {len(scene_plans)} scenes")
 
         # 全局构建一次 Visual Contract（失败则回退到旧的 per-scene 匹配行为）
-        visual_contract = self._build_global_visual_contract(scene_plans, concept_analysis)
+        visual_contract = (None if scene_plans[0].id.startswith("aligned_lesson_")
+                           else self._build_global_visual_contract(scene_plans, concept_analysis))
         # Cache it for downstream render-time fallbacks (Tier 2 regeneration).
         self._cached_visual_contract = visual_contract
         self._continuous_scene_plan = None
@@ -3943,7 +4019,7 @@ class {class_name}(VoiceoverScene):
         last_error = (render_result.error_message if render_result else render_exc) or tier1_error
 
         # ---------- Tier 3: deterministic stub scene ----------
-        if stub_enabled:
+        if stub_enabled and not (scene_plan and scene_plan.id.startswith("aligned_lesson_")):
             # Resolve title/description from whatever context we have.
             if scene_plan is not None:
                 stub_title = scene_plan.title or class_name

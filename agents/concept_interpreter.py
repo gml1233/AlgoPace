@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from agents.base import BaseAgent
+from agents.teaching_planner import Objectives, TeachingRequest
+import json
 import re
 
 
@@ -16,6 +18,8 @@ class ConceptAnalysis(BaseModel):
     main_concept: str
     algorithm_description: str = ""
     sub_concepts: List[SubConcept]
+    teaching_request: Optional[TeachingRequest] = None
+    design: Optional[Objectives] = None
 
 
 class ConceptInterpreterAgent(BaseAgent):
@@ -257,6 +261,23 @@ The following is a detailed knowledge document about this concept. You MUST base
         except Exception as e:
             self.logger.error(f"Failed to analyze concept: {e}")
             raise ValueError(f"Concept interpretation failed: {e}")
+
+    def analyze_lesson(self, concept, request, knowledge_content, target_language):
+        """Align observable performance, assessment evidence and essential reasons."""
+        prompt = (
+            "Analyze this lesson using constructive alignment. Return JSON matching the schema. "
+            "For each distinct objective specify observable performance, an unseen assessment "
+            "and necessary causal explanations. Ground algorithm facts and variant in the supplied "
+            "reference if present. List only prerequisites justified by the learner profile as known. "
+            "Use short unique IDs. Write human-readable values in " + target_language + "."
+        )
+        payload = {"topic": concept, "request": request.model_dump(),
+                   "reference": knowledge_content, "schema": Objectives.model_json_schema()}
+        design = Objectives.model_validate(self._call_llm_structured(
+            system_prompt=prompt, user_message=json.dumps(payload, ensure_ascii=False),
+            temperature=self.temperature, max_retries=3))
+        return ConceptAnalysis(main_concept=concept, algorithm_description=request.goal,
+                               sub_concepts=[], teaching_request=request, design=design)
 
     def _sanitize_input(self, text: str) -> str:
         """Remove potentially harmful characters from input"""

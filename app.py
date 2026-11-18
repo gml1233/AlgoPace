@@ -18,6 +18,7 @@ import logging
 # 导入自定义的Pipeline类（来自同级目录的pipeline.py文件），负责处理动画生成的核心流程
 from pipeline import Pipeline
 from edit_pipeline import EditPipeline
+from agents.teaching_planner import TeachingRequest
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -266,6 +267,11 @@ def generate_animation(
     langfuse_user_id=None,
     langfuse_session_id=None,
     render_quality: str = "l",
+    aligned_mode=True,
+    lesson_goal="",
+    learner_profile="",
+    budget_seconds=120,
+    reference_case=None,
     progress=gr.Progress(),
 ):
     """
@@ -353,8 +359,14 @@ def generate_animation(
     print(f"首次生成渲染质量: {render_quality}")
 
     # 调用核心 pipeline 生成
+    request = TeachingRequest(goal=(lesson_goal or concept).strip(),
+                              learner=(learner_profile or "初学者，先修知识未指定").strip(),
+                              seconds=budget_seconds, reference_case=reference_case) if aligned_mode else None
+    if request:
+        agent_params["teaching_request"] = request.model_dump()
     result = pipeline.run(
         concept,
+        teaching_request=request,
         progress_callback=update_progress,
         target_language=language,
         knowledge_document_path=knowledge_document_path,
@@ -396,6 +408,8 @@ def generate_animation(
             return None, manim_code, srt_content, scene_durations
     else:
         error_msg = result.get("error", "生成失败，请查看日志")
+        if aligned_mode:
+            raise gr.Error(error_msg or "教学视频生成失败")
         print(f"生成失败: {error_msg}")
         return None, "", "", None
 
@@ -1343,6 +1357,14 @@ with gr.Blocks(title="AlgoT2V") as demo:
                                 )
                     # 首次生成质量：默认低质量快速预览，确认效果后再用二次渲染切高质量。
                     _gen_quality_choices, _gen_quality_default = _render_quality_choices()
+                    aligned_mode = gr.Checkbox(value=True, label="按教学目标规划（关闭后使用完整演示模式）")
+                    lesson_goal = gr.Textbox(label="学习目标", placeholder="例如：解释为什么借位要调整父分隔键")
+                    learner_profile = gr.Textbox(label="学习者基础", placeholder="例如：已学过 B 树查找")
+                    budget_seconds = gr.Number(label="最长视频时长（秒）", value=120, precision=0, minimum=1, maximum=3600)
+                    reference_case = gr.Dropdown(
+                        label="参考执行示例（可选，须与主题匹配）", value=None,
+                        choices=[("二分查找（闭区间）", "binary_search_inclusive"),
+                                 ("B 树删除后向右兄弟借位（t=2）", "btree_t2_right_borrow")])
                     generate_quality = gr.Radio(
                         label="🎚️ 生成质量 / Generation Quality",
                         choices=_gen_quality_choices,
@@ -1584,7 +1606,7 @@ with gr.Blocks(title="AlgoT2V") as demo:
             sg_top_p,
             langfuse_user_id,
             langfuse_session_id,
-            generate_quality,
+            generate_quality, aligned_mode, lesson_goal, learner_profile, budget_seconds, reference_case,
         ],
         outputs=[video_output, manim_code_editor, srt_editor, scene_durations_state],
     )

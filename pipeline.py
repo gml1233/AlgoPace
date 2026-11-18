@@ -21,6 +21,7 @@ from datetime import datetime
 # 从自定义config模块导入settings配置对象，包含整个项目的所有配置参数（如API密钥、输出目录等）
 from config import settings
 # 从自定义agents.concept_interpreter模块导入概念解释器代理类和概念分析结果类
+from agents.teaching_planner import TeachingRequest
 from agents.concept_interpreter import ConceptInterpreterAgent, ConceptAnalysis
 # 从自定义agents.manim_agent模块导入Manim动画生成代理类
 from agents.manim_agent import ManimAgent
@@ -170,7 +171,8 @@ class Pipeline:
             agent_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
             langfuse_user_id: Optional[str] = None,
             subtitle_style: Optional[Dict[str, Any]] = None,
-            render_quality: Optional[str] = None
+            render_quality: Optional[str] = None,
+            teaching_request: Optional[TeachingRequest] = None,
     ) -> Dict[str, Any]:
         # 首次生成渲染质量：前端可传入 render_quality="l" 走低质量快速预览，确认效果后
         # 再用二次渲染切高质量重渲。质量作为「逐次参数」一路下传到渲染器
@@ -242,7 +244,10 @@ class Pipeline:
                 if progress_callback:
                     progress_callback("Analyzing concept...", 0.1)
 
-                if langfuse:
+                if teaching_request is not None:
+                    analysis = self.concept_interpreter.analyze_lesson(
+                        concept, teaching_request, knowledge_content, target_language)
+                elif langfuse:
                     with langfuse.start_as_current_observation(
                         as_type="agent",
                         name="concept-interpreter",
@@ -290,6 +295,8 @@ class Pipeline:
                 if progress_callback:
                     progress_callback("Animation generation complete", 0.7)
 
+                if teaching_request and not animation_result.success:
+                    raise ValueError(animation_result.error_message or "Teaching video generation failed")
                 scene_codes_list = animation_result.scene_codes if animation_result and animation_result.success else []
                 combined_manim_code = None
                 srt_content = None
@@ -345,6 +352,12 @@ class Pipeline:
                 else:
                     video_result = None
 
+                if teaching_request:
+                    if not video_result or not video_result.success or not video_result.output_duration:
+                        raise ValueError("Unable to verify final teaching video duration")
+                    if video_result.output_duration > teaching_request.seconds:
+                        raise ValueError(f"Final video exceeds budget: {video_result.output_duration:.2f}s "
+                                         f"> {teaching_request.seconds}s")
                 steps_completed = ["concept_interpretation"]
                 if animation_result.success:
                     steps_completed.append("animation_generation")
