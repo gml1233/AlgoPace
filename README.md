@@ -1,4 +1,41 @@
-# AlgoT2V
+# AlgoPace
+
+AlgoPace 基于下方 AlgoT2V 生成与渲染管线，增加面向数据结构课程的教学任务图规划。启动 Gradio 后，在生成区填写主题、学习目标、学习者基础和最长秒数；关闭“按教学目标规划”可运行原有演示流程。
+
+|阶段|输入与输出|
+|---|---|
+|教学目标分析 Agent|根据主题、参考材料和学习者基础，生成可观察的学习表现、独立题型和必须讲明的理由。采用 Biggs 的建构性对齐原则。|
+|教学任务图规划器|每个目标对应一个复合任务，多种分解方法提供有序原子步骤。校验先修、理由覆盖、硬依赖和状态衔接，并在预算内选择兼容的方法组合。|
+|Manim 代码生成 Agent|根据选定步骤生成单场景配音代码，沿用现有 lint、渲染和字幕工具。渲染超时后按实测时长校准成本，尝试一次重新规划。不可行或最终超时会返回错误。|
+
+目标设计保存在分析输出目录，候选任务网络、理由索引、初末状态和最终分镜保存在动画输出目录的 `scene_plans`。代码生成器通过每个 action 的 parameters 获取目标、案例、旁白和必讲理由。目标最多 6 个，每个目标最多 3 种讲法，规划器枚举至多 729 种组合。可行组合优先保留换例预测机会和叙事顺序，再选择较短方案。这个规则是可替换的教学价值代理。开放主题仅检查声明的状态衔接。可选的闭区间二分查找和 B 树叶结点右借示例另附可执行参考快照，使用时请匹配主题及算法变体。画面语义与学习效果需要独立评价。
+
+Python 入口沿用 `Pipeline.run`。传入教学请求开启新模式，例如：
+
+```python
+from agents.teaching_planner import TeachingRequest
+from pipeline import Pipeline
+
+result = Pipeline().run(
+    "B 树删除后向右兄弟借位", target_language="Chinese",
+    teaching_request=TeachingRequest(
+        goal="解释为什么必须调整父分隔键", learner="学过 B 树查找",
+        seconds=90, reference_case="btree_t2_right_borrow",
+    ),
+)
+```
+
+**配对评测。** `python -m eval.teaching_benchmark cases` 输出 6 个算法 × 2 个目标 × 2 个预算的先导任务。教师在实验前为每项目标制定独立量表，对视频中每条必要解释按 0 / 1 / 2 评分，分别表示缺失或错误、结论正确但理由不完整、结论和理由正确。关键状态错误、生成失败或超时的任务主分为零，每个条件都应进入分母。评分文件格式示例：
+
+```json
+[{"budget":90,"duration":86.5,"rendered":true,"critical_error":false,"reasons":[2,1,2]}]
+```
+
+运行 `python -m eval.teaching_benchmark score ratings.json` 输出逐条覆盖率、预算合规、超时量和平均主分。评分需要实际测时及人工盲评。学生迁移效果另行通过未见样例的对照实验测量。运行 `python -m unittest discover -s tests -v` 检查规划器约束和评分。
+
+设计参考：[Biggs, 1996](https://doi.org/10.1007/BF00138871)、[SHOP2](https://www.cs.umd.edu/~nau/papers/nau2003shop2.pdf)、[教学设计中的 HTN](https://doi.org/10.1016/j.eswa.2013.12.016)。
+
+## AlgoT2V
 
 **AI-powered STEM concept visualizer that generates narrated educational animations using Manim, LLMs, and multimodal AI.**
 
