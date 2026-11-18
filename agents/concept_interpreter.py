@@ -268,7 +268,8 @@ The following is a detailed knowledge document about this concept. You MUST base
             "Analyze this lesson using constructive alignment. Return JSON matching the schema. "
             "For each distinct objective specify observable performance, an unseen assessment "
             "and necessary causal explanations. Ground algorithm facts and variant in the supplied "
-            "reference if present. List only prerequisites justified by the learner profile as known. "
+            "reference if present. Preserve the specific variant, indexing rules, and boundary cases "
+            "in algorithm_conventions. List only prerequisites justified by the learner profile as known. "
             "Use short unique IDs. Write human-readable values in " + target_language + "."
         )
         payload = {"topic": concept, "request": request.model_dump(),

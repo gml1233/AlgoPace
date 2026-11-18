@@ -31,7 +31,7 @@ result = Pipeline().run(
 [{"budget":90,"duration":86.5,"rendered":true,"critical_error":false,"reasons":[2,1,2]}]
 ```
 
-运行 `python -m eval.teaching_benchmark score ratings.json` 输出逐条覆盖率、预算合规、超时量和平均主分。评分需要实际测时及人工盲评。学生迁移效果另行通过未见样例的对照实验测量。运行 `python -m unittest discover -s tests -v` 检查规划器约束和评分。
+运行 `python -m eval.teaching_benchmark score ratings.json` 输出逐条覆盖率、预算合规、超时量和平均主分。评分需要实际测时及人工盲评。学生迁移效果另行通过未见样例的对照实验测量。运行 `python -m unittest discover -s tests -v` 检查规划器约束和评分。在已激活的 Manim 环境执行 `python tests/smoke_teaching_pipeline.py`，可用固定模型回复和音轨贯通实际渲染与合成。
 
 设计参考：[Biggs, 1996](https://doi.org/10.1007/BF00138871)、[SHOP2](https://www.cs.umd.edu/~nau/papers/nau2003shop2.pdf)、[教学设计中的 HTN](https://doi.org/10.1016/j.eswa.2013.12.016)。
 

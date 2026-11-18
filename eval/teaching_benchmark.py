@@ -62,4 +62,3 @@ if __name__ == "__main__":
         scores = [Rating.model_validate(row).scores() for row in rows]
         result = {"samples": scores, "mean_primary": sum(r["primary"] for r in scores)/len(scores)}
     print(json.dumps(result, ensure_ascii=False, indent=2))
-

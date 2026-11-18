@@ -58,4 +58,3 @@ class PlannerTests(unittest.TestCase):
         r = Rating(rendered=True, duration=91, critical_error=False, reasons=[1, 2], budget=90)
         self.assertEqual(r.scores()["coverage"], .75)
         self.assertEqual(r.scores()["primary"], 0)
-

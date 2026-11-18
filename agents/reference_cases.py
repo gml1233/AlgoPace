@@ -39,4 +39,3 @@ REFERENCE_CASES = {
     "binary_search_inclusive": _binary_search,
     "btree_t2_right_borrow": _btree_right_borrow,
 }
-

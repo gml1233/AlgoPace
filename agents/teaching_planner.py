@@ -32,6 +32,7 @@ class Objective(TeachingModel):
 class Objectives(TeachingModel):
     objectives: list[Objective] = Field(min_length=1, max_length=6)
     known_prerequisites: list[str]
+    algorithm_conventions: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def unique_ids(self):
@@ -99,13 +100,13 @@ def _order(methods):
     sorter = TopologicalSorter(deps)
     sorter.prepare()
     ordered = []
-    while sorter.is_active():
-        ready = set(sorter.get_ready())
-        while ready:
-            key = min(ready, key=lambda k: (len(set(methods[k].prefer_after) - set(ordered)), k))
-            ready.remove(key)
-            ordered.append(key)
-            sorter.done(key)
+    ready = set(sorter.get_ready())
+    while ready:
+        key = min(ready, key=lambda k: (len(set(methods[k].prefer_after) - set(ordered)), k))
+        ready.remove(key)
+        ordered.append(key)
+        sorter.done(key)
+        ready.update(sorter.get_ready())
     return ordered
 
 
@@ -159,6 +160,7 @@ def plan_lesson(topic, request, design, network, *, estimate_scale=1.0):
                 target=f"{key}_{i+1}", description=step.visual, duration=step.seconds,
                 parameters={"objective": goals[key].performance, "method": method.name,
                             "criterion": goals[key].assessment, "example": method.example,
+                            "algorithm_conventions": design.algorithm_conventions,
                             "reference_case": request.reference_case,
                             "from_snapshot": snapshots.get(step.requires_state),
                             "to_snapshot": snapshots.get(step.produces_state),
@@ -168,4 +170,3 @@ def plan_lesson(topic, request, design, network, *, estimate_scale=1.0):
                             "transfer_question": method.transfer_question if i == len(method.steps)-1 else ""}))
     return ScenePlan(id="aligned_lesson_" + uuid4().hex[:12], title=topic, sub_concept_id="",
                      description=f"{request.goal} ({request.seconds}s maximum)", actions=actions)
-
