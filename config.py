@@ -227,7 +227,7 @@ class Settings(BaseSettings):
     # 编辑步骤使用的模型（为空时使用 reasoning_model）
     edit_model: Optional[str] = "MiniMax-M2.7-highspeed"
     # 编辑步骤使用的 OpenRouter API Key（为空时使用全局 openrouter_api_key）
-    edit_openrouter_api_key: Optional[str] = "sk-cp-oT9jL1b-u_0ou6nbOZn6r4VNDS06jUzV_Vdfb-TKVMl11kyP3OrfTQNfVdLAJ-EMs88n8qA-w0aOZvAbD9umqbZYZGBWoV-YbzSTX1OntL2kJJjaSa7xZPY"
+    edit_openrouter_api_key: Optional[str] = None
     # 编辑步骤使用的 OpenRouter Base URL（为空时使用全局 openrouter_base_url）
     edit_openrouter_base_url: Optional[str] = "https://api.minimaxi.com/v1"
     # 编辑步骤的随机性（默认 0.3，偏保守）
@@ -312,9 +312,9 @@ class Settings(BaseSettings):
 
     # ========== Langfuse 可观测性配置（可选） ==========
     # Langfuse 公钥（与 secret_key 同时配置时启用 trace，否则不上报）
-    langfuse_public_key: Optional[str] = "pk-lf-4eed4cd4-ac11-405b-a222-78da6252ece1"
+    langfuse_public_key: Optional[str] = None
     # Langfuse 私钥
-    langfuse_secret_key: Optional[str] = "sk-lf-d04f7336-40aa-46fb-9099-f0d51a5327a9"
+    langfuse_secret_key: Optional[str] = None
     # Langfuse 服务地址（可选，默认 EU cloud；自托管或 US 需设置）
     langfuse_base_url: Optional[str] = "https://langfuse.mcpnet.cn"
 
